@@ -13,16 +13,52 @@ const io = new Server(server, {
 const APP_PASSKEY = process.env.PASSKEY || 'passkey4321';
 const PORT = process.env.PORT || 3000;
 
+// HTTP Security Headers Middleware
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 // Serve static frontend files
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 
-// API endpoint to verify passkey before socket connection
+// Anti-Bruteforce IP Rate Limiter for Passkey Verification
+const passkeyAttempts = new Map(); // IP -> { count, firstAttempt, blockedUntil }
+
 app.post('/api/verify-passkey', (req, res) => {
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+
+  let attempt = passkeyAttempts.get(clientIp);
+  if (attempt && attempt.blockedUntil && now < attempt.blockedUntil) {
+    const remainingSec = Math.ceil((attempt.blockedUntil - now) / 1000);
+    return res.status(429).json({ 
+      success: false, 
+      message: `Too many failed attempts. Locked out for ${remainingSec}s.` 
+    });
+  }
+
   const { passkey } = req.body;
   if (passkey === APP_PASSKEY) {
+    passkeyAttempts.delete(clientIp);
     return res.json({ success: true, message: 'Access granted' });
   }
+
+  // Record failed attempt
+  if (!attempt || (now - attempt.firstAttempt > 60000)) {
+    attempt = { count: 1, firstAttempt: now, blockedUntil: 0 };
+  } else {
+    attempt.count += 1;
+    if (attempt.count >= 5) {
+      attempt.blockedUntil = now + 5 * 60 * 1000; // 5-minute lockout
+    }
+  }
+  passkeyAttempts.set(clientIp, attempt);
+
   return res.status(401).json({ success: false, message: 'Invalid secret passkey' });
 });
 
@@ -179,6 +215,30 @@ io.on('connection', (socket) => {
     broadcastRoomUsers(targetRoomId);
   });
 
+  // Socket Message Rate Limiter Map (socketId -> { lastMsgTime, msgCount })
+  const socketRateLimits = new Map();
+
+  function isSafeMediaPayload(mediaData) {
+    if (!mediaData) return true;
+    if (typeof mediaData !== 'string') return false;
+    const lower = mediaData.toLowerCase().trim();
+    
+    // Reject malicious script schemes or raw text/html data URLs
+    if (lower.startsWith('javascript:') || lower.startsWith('vbscript:') || lower.startsWith('data:text/html')) {
+      return false;
+    }
+
+    const safePrefixes = [
+      'data:image/', 'data:audio/', 'data:video/',
+      'data:application/pdf',
+      'data:application/vnd.ms-excel', 'data:application/vnd.openxmlformats-officedocument.spreadsheetml', 'data:text/csv',
+      'data:application/msword', 'data:application/vnd.openxmlformats-officedocument.wordprocessingml',
+      'data:application/vnd.ms-powerpoint', 'data:application/vnd.openxmlformats-officedocument.presentationml',
+      'data:text/plain', 'data:text/markdown', 'data:application/json'
+    ];
+    return safePrefixes.some(prefix => lower.startsWith(prefix));
+  }
+
   // 3. Send Message (Room or Direct 1-on-1)
   socket.on('send_message', ({ text, media, mediaType, mediaName, recipientId }, callback) => {
     if (!isAuthenticated()) return;
@@ -186,14 +246,34 @@ io.on('connection', (socket) => {
     const user = users.get(socket.id);
     if (!user) return;
 
+    // Socket Rate Limiting (max 5 messages per second)
+    const now = Date.now();
+    let rate = socketRateLimits.get(socket.id);
+    if (!rate || (now - rate.lastMsgTime > 1000)) {
+      rate = { lastMsgTime: now, msgCount: 1 };
+    } else {
+      rate.msgCount += 1;
+      if (rate.msgCount > 5) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Slow down! Message rate limit exceeded.' });
+        return;
+      }
+    }
+    socketRateLimits.set(socket.id, rate);
+
+    // Media Security Verification
+    if (media && !isSafeMediaPayload(media)) {
+      if (typeof callback === 'function') callback({ success: false, error: 'Unsafe attachment rejected.' });
+      return;
+    }
+
     const msgObj = {
       id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
       senderId: user.id,
       senderName: user.username,
       text: (text || '').slice(0, 2000),
-      media: media || null, // Base64 data URL for ephemeral image/audio/document
-      mediaType: mediaType || null,
-      mediaName: mediaName || null,
+      media: media || null,
+      mediaType: mediaType ? String(mediaType).slice(0, 30) : null,
+      mediaName: mediaName ? String(mediaName).slice(0, 100) : null,
       timestamp: new Date().toISOString(),
       reactions: {}
     };
@@ -411,6 +491,7 @@ io.on('connection', (socket) => {
 
   // 8. Disconnect Handler (Suppresses F5 page refresh notices, delays broadcast by 10s for true tab close)
   socket.on('disconnect', () => {
+    socketRateLimits.delete(socket.id);
     const user = users.get(socket.id);
     if (!user) return;
 
