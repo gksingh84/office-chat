@@ -360,21 +360,26 @@ document.addEventListener('DOMContentLoaded', () => {
       const msgGroup = chatMessages.querySelector(`[data-id="${messageId}"]`);
       if (msgGroup) {
         const bubble = msgGroup.querySelector('.msg-bubble');
-        let textSpan = bubble.querySelector('.msg-text');
-        if (!textSpan) {
-          textSpan = document.createElement('span');
-          textSpan.className = 'msg-text';
-          bubble.prepend(textSpan);
-        }
+        if (bubble) {
+          bubble.classList.remove('editing');
 
-        textSpan.innerHTML = `${escapeHTML(newText)} <span class="edited-tag">(edited)</span>`;
+          const mediaImg = bubble.querySelector('img.msg-media');
+          const mediaAudio = bubble.querySelector('audio.msg-media');
+          
+          let mediaHTML = '';
+          if (mediaImg) {
+            mediaHTML = `<img src="${mediaImg.src}" alt="Attachment" class="msg-media">`;
+          } else if (mediaAudio) {
+            mediaHTML = `<audio src="${mediaAudio.src}" controls class="msg-media"></audio>`;
+          }
 
-        const hasMedia = !!bubble.querySelector('.msg-media');
-        const isEmojiOnly = newText && !hasMedia && /^[\p{Extended_Pictographic}\s\u200d\ufe0f]+$/u.test(newText.trim());
-        if (isEmojiOnly) {
-          bubble.classList.add('emoji-only');
-        } else {
-          bubble.classList.remove('emoji-only');
+          const isEmojiOnly = newText && !mediaHTML && /^[\p{Extended_Pictographic}\s\u200d\ufe0f]+$/u.test(newText.trim());
+
+          let inner = `<span class="msg-text">${escapeHTML(newText)} <span class="edited-tag">(edited)</span></span>`;
+          if (mediaHTML) inner += mediaHTML;
+
+          bubble.className = `msg-bubble ${isEmojiOnly ? 'emoji-only' : ''}`;
+          bubble.innerHTML = inner;
         }
       }
 
