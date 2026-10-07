@@ -290,6 +290,8 @@ io.on('connection', (socket) => {
     const user = users.get(socket.id);
     if (!user) return;
 
+    const deleterName = user.username;
+
     if (recipientId) {
       // Direct Message Deletion
       const targetKey = String(recipientId).trim().toLowerCase();
@@ -300,10 +302,11 @@ io.on('connection', (socket) => {
           break;
         }
       }
+      const payload = { messageId, deletedBy: deleterName, isDirect: true };
       if (recipientSocketId) {
-        io.to(recipientSocketId).emit('message_deleted', { messageId });
+        io.to(recipientSocketId).emit('message_deleted', payload);
       }
-      socket.emit('message_deleted', { messageId });
+      socket.emit('message_deleted', payload);
     } else {
       // Room Message Deletion
       const roomId = user.currentRoom;
@@ -315,7 +318,7 @@ io.on('connection', (socket) => {
         const msg = room.messages[index];
         if (msg.senderName.toLowerCase() === user.username.toLowerCase()) {
           room.messages.splice(index, 1);
-          io.to(roomId).emit('message_deleted', { messageId, roomId });
+          io.to(roomId).emit('message_deleted', { messageId, deletedBy: deleterName, roomId, isDirect: false });
         }
       }
     }
