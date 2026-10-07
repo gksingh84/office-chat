@@ -623,14 +623,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Allowed file extensions helper (Excel, PDF, Word, PowerPoint, Image, Text)
+  // Allowed file extensions helper (Excel, PDF, Word, PowerPoint, Image, Text, Audio, Video)
   const ALLOWED_DOC_EXTENSIONS = [
     'xls', 'xlsx', 'csv',
     'pdf',
     'doc', 'docx',
     'ppt', 'pptx',
     'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp',
-    'txt', 'log', 'md', 'json'
+    'txt', 'log', 'md', 'json',
+    'mp3', 'wav', 'ogg', 'm4a', 'aac',
+    'mp4', 'webm', 'mov', 'avi', 'mkv'
   ];
 
   function getFileTypeCategory(filename, mimeType = '') {
@@ -638,6 +640,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext) || mimeType.startsWith('image/')) {
       return 'image';
+    }
+    if (['mp3', 'wav', 'ogg', 'm4a', 'aac'].includes(ext) || mimeType.startsWith('audio/')) {
+      return 'audio';
+    }
+    if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext) || mimeType.startsWith('video/')) {
+      return 'video';
     }
     if (ext === 'pdf' || mimeType.includes('pdf')) {
       return 'pdf';
@@ -831,6 +839,8 @@ document.addEventListener('DOMContentLoaded', () => {
         mediaHTML = `<img src="${msg.media}" alt="Attachment" class="msg-media">`;
       } else if (msg.mediaType === 'audio') {
         mediaHTML = `<audio src="${msg.media}" controls class="msg-media"></audio>`;
+      } else if (msg.mediaType === 'video') {
+        mediaHTML = `<video src="${msg.media}" controls class="msg-media" style="max-width:100%; max-height:280px; border-radius:12px; margin-top:8px;"></video>`;
       } else if (msg.mediaType === 'pdf') {
         mediaHTML = `<div class="doc-attachment-card"><div class="doc-icon pdf"><i class="fa-solid fa-file-pdf"></i></div><div class="doc-info"><span class="doc-name">${fileName}</span><a href="${msg.media}" download="${fileName}" class="doc-download-btn"><i class="fa-solid fa-download"></i> Download PDF</a></div></div>`;
       } else if (msg.mediaType === 'excel') {

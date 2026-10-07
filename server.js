@@ -6,7 +6,7 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  maxHttpBufferSize: 1e7 // 10MB payload limit for ephemeral image/audio sharing
+  maxHttpBufferSize: 2e7 // 20MB payload limit for ephemeral media sharing
 });
 
 // Master passkey for app access
