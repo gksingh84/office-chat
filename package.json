@@ -1,0 +1,25 @@
+{
+  "name": "office-chatbox",
+  "version": "1.0.0",
+  "description": "Office-ChatBox: Secure, ephemeral, passkey-protected instant messaging web app for team privacy.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "chat",
+    "office-chatbox",
+    "instant-messaging",
+    "ephemeral",
+    "passkey",
+    "socket.io",
+    "privacy"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

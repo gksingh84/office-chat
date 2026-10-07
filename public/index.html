@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Office-ChatBox</title>
+  <meta name="description" content="Office-ChatBox Web Application">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  
+  <!-- Google Fonts & Font Awesome Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+  
+  <!-- Inline Session Check (Prevents Login Modal Flash on Refresh) -->
+  <script>
+    try {
+      if (sessionStorage.getItem('office_chatbox_session')) {
+        document.documentElement.classList.add('has-saved-session');
+      }
+    } catch (e) {}
+  </script>
+
+  <!-- Socket.io Client -->
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div class="app-background">
+    <div class="glow-sphere sphere-1"></div>
+    <div class="glow-sphere sphere-2"></div>
+    <div class="glow-sphere sphere-3"></div>
+  </div>
+
+  <!-- PASSKEY & USERNAME AUTH MODAL OVERLAY -->
+  <div id="auth-modal" class="modal-overlay active">
+    <div class="glass-card auth-card">
+      <div class="auth-header">
+        <div class="brand-logo">
+          <i class="fa-solid fa-building-user"></i>
+        </div>
+        <h2>Office-ChatBox</h2>
+      </div>
+
+      <form id="auth-form" autocomplete="off">
+        <div class="form-group">
+          <label for="passkey-input"><i class="fa-solid fa-key"></i> Secret Passkey</label>
+          <div class="input-wrapper">
+            <input type="password" id="passkey-input" placeholder="Enter master passkey..." required autofocus autocomplete="off">
+            <button type="button" class="btn-icon toggle-password" id="toggle-pass-btn" title="Toggle Visibility">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="username-input"><i class="fa-solid fa-user-ninja"></i> Your Alias / Username</label>
+          <input type="text" id="username-input" placeholder="e.g. CyberGhost" maxlength="20" required autocomplete="off">
+        </div>
+
+        <div id="auth-error" class="error-badge hidden">
+          <i class="fa-solid fa-circle-exclamation"></i> <span id="error-text">Incorrect Passkey</span>
+        </div>
+
+        <button type="submit" id="btn-enter" class="btn btn-primary btn-block">
+          <span>Unlock & Connect</span>
+          <i class="fa-solid fa-arrow-right"></i>
+        </button>
+
+        <button type="button" id="btn-launch-popout-login" class="btn btn-secondary-soft btn-block" style="margin-top:10px;">
+          <i class="fa-solid fa-up-right-from-square"></i> Open in Pop-out Mini Window
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN CHAT APPLICATION CONTAINER -->
+  <div id="app-container" class="app-container hidden">
+    
+    <!-- LEFT SIDEBAR: ROOMS & ONLINE USERS -->
+    <aside id="sidebar" class="sidebar glass-panel">
+      
+      <!-- USER PROFILE HEADER -->
+      <div class="sidebar-header">
+        <div class="user-profile">
+          <div class="avatar" id="current-user-avatar">?</div>
+          <div class="user-info">
+            <span class="user-name" id="display-user-name">Loading...</span>
+            <span class="status-indicator"><span class="dot"></span> Online</span>
+          </div>
+        </div>
+        <button id="btn-popout-app" class="btn-icon" title="Open as Floating Mini Window">
+          <i class="fa-solid fa-window-restore"></i>
+        </button>
+      </div>
+
+      <!-- NAVIGATION TABS: ROOMS VS DIRECT MESSAGES -->
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" data-tab="tab-rooms">
+          <i class="fa-solid fa-comments"></i> Rooms
+        </button>
+        <button class="tab-btn" data-tab="tab-users">
+          <i class="fa-solid fa-users"></i> Colleagues <span id="online-count" class="badge">0</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: ROOMS LIST -->
+      <div id="tab-rooms" class="tab-content active">
+        <div class="section-title">
+          <span>Office Lounges</span>
+          <button id="btn-create-room-modal" class="btn-icon-sm" title="Create Private Room">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+        <div id="rooms-list" class="item-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- TAB 2: ONLINE USERS & DIRECT MESSAGES -->
+      <div id="tab-users" class="tab-content">
+        <div class="section-title">
+          <span>Active Team Members</span>
+          <span class="hint-tag">Click to Private Chat</span>
+        </div>
+        <div id="users-list" class="item-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+
+      <!-- SIDEBAR FOOTER -->
+    </aside>
+
+    <!-- MAIN CHAT AREA -->
+    <main class="chat-area glass-panel">
+      
+      <!-- CHAT HEADER -->
+      <header class="chat-header">
+        <div class="chat-header-info">
+          <button id="mobile-toggle-sidebar" class="btn-icon">
+            <i class="fa-solid fa-bars"></i>
+          </button>
+          <div class="chat-target-avatar" id="chat-target-icon">
+            <i class="fa-solid fa-hashtag"></i>
+          </div>
+          <div>
+            <h3 id="chat-title">Main Lounge</h3>
+            <span id="chat-subtitle" class="chat-subtitle"></span>
+          </div>
+        </div>
+
+        <div class="chat-header-actions">
+          <button id="btn-burn-chat" class="btn btn-danger-soft btn-sm" title="Wipe Chat Buffer for Everyone">
+            <i class="fa-solid fa-fire-burner"></i>
+            <span class="btn-text">Burn History</span>
+          </button>
+          <button id="btn-logout" class="btn btn-secondary-soft btn-sm" title="Logout Session">
+            <i class="fa-solid fa-right-from-bracket"></i>
+            <span class="btn-text">Logout</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- MESSAGES DISPLAY BODY -->
+      <div id="chat-messages" class="chat-messages">
+        <!-- Messages dynamically appended -->
+      </div>
+
+      <!-- TYPING INDICATOR -->
+      <div id="typing-indicator" class="typing-indicator hidden">
+        <div class="typing-dots">
+          <span></span><span></span><span></span>
+        </div>
+        <span id="typing-text">Someone is typing...</span>
+      </div>
+
+      <!-- MEDIA / ATTACHMENT PREVIEW BAR -->
+      <div id="media-preview-bar" class="media-preview-bar hidden">
+        <div class="preview-content">
+          <img id="preview-img" src="" alt="Preview" class="preview-thumb hidden">
+          <audio id="preview-audio" controls class="preview-audio hidden"></audio>
+          <span id="preview-filename">file_attachment.png</span>
+        </div>
+        <button id="btn-cancel-media" class="btn-icon-sm">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- CHAT INPUT FOOTER -->
+      <footer class="chat-input-area">
+        <form id="message-form" class="message-form">
+          <div class="input-actions">
+            <!-- Image Attachment Button -->
+            <label for="image-upload" class="btn-icon" title="Attach Ephemeral Image">
+              <i class="fa-solid fa-paperclip"></i>
+              <input type="file" id="image-upload" accept="image/*" class="hidden-input">
+            </label>
+
+            <!-- Voice Note Record Button -->
+            <button type="button" id="btn-voice-record" class="btn-icon" title="Hold/Click to Record Voice Note">
+              <i class="fa-solid fa-microphone"></i>
+            </button>
+
+            <!-- Emoji Picker Trigger -->
+            <button type="button" id="btn-emoji-trigger" class="btn-icon" title="Insert Emoji">
+              <i class="fa-regular fa-face-smile"></i>
+            </button>
+          </div>
+
+          <div class="textarea-wrapper">
+            <textarea id="message-input" placeholder="Type a message..." rows="1" maxlength="2000"></textarea>
+          </div>
+
+          <button type="submit" id="btn-send-message" class="btn btn-send">
+            <i class="fa-solid fa-paper-plane"></i>
+          </button>
+        </form>
+
+        <!-- EMOJI & STICKERS PICKER POPUP -->
+        <div id="emoji-picker" class="emoji-picker glass-card hidden">
+          <div class="emoji-tabs">
+            <button type="button" class="emoji-tab-btn active" data-category="smileys">😀 Smileys</button>
+            <button type="button" class="emoji-tab-btn" data-category="stickers">🎨 Stickers</button>
+          </div>
+          <div id="emoji-smileys" class="emoji-category active">
+            <div class="emoji-grid">
+              <span>👍</span><span>❤️</span><span>😂</span><span>🔥</span><span>😍</span><span>🎉</span>
+              <span>😮</span><span>🙏</span><span>😎</span><span>👏</span><span>🥳</span><span>💩</span>
+              <span>💡</span><span>🚀</span><span>🔒</span><span>👻</span><span>💯</span><span>✨</span>
+              <span>🤩</span><span>🤣</span><span>😊</span><span>🥰</span><span>🤯</span><span>😴</span>
+              <span>🤖</span><span>🙈</span><span>🤝</span><span>✌️</span><span>🧠</span><span>⚡</span>
+              <span>🌟</span><span>🎯</span><span>📌</span><span>🏆</span><span>☕</span><span>🍕</span>
+            </div>
+          </div>
+          <div id="emoji-stickers" class="emoji-category">
+            <div class="sticker-grid">
+              <span class="sticker-chip">🏷️ APPROVED</span>
+              <span class="sticker-chip">🚨 URGENT</span>
+              <span class="sticker-chip">🎯 ON IT</span>
+              <span class="sticker-chip">☕ COFFEE TIME</span>
+              <span class="sticker-chip">🚀 SHIP IT</span>
+              <span class="sticker-chip">💯 100% AGREE</span>
+              <span class="sticker-chip">👀 LOOKING</span>
+              <span class="sticker-chip">👍 DONE!</span>
+              <span class="sticker-chip">❌ BLOCKED</span>
+              <span class="sticker-chip">💡 GREAT IDEA</span>
+              <span class="sticker-chip">👏 KUDOS</span>
+              <span class="sticker-chip">📌 PINNED</span>
+              <span class="sticker-chip">🙏 THANK YOU</span>
+              <span class="sticker-chip">⚡ QUICK UPDATE</span>
+              <span class="sticker-chip">(⁠•⁠‿⁠•⁠) Wave</span>
+              <span class="sticker-chip">(⁠≧⁠▽⁠≦⁠) Yay!</span>
+              <span class="sticker-chip">(⁠ಠ⁠_⁠ಠ⁠) Really?</span>
+              <span class="sticker-chip">(⁠〒⁠﹏⁠〒⁠) Sad</span>
+              <span class="sticker-chip">(⁠╯⁠°⁠□⁠°⁠)⁠╯⁠︵⁠ ┻⁠━⁠┻ Flip</span>
+              <span class="sticker-chip">(⁠⌐⁠■⁠_⁠■⁠) Cool</span>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </main>
+
+  </div>
+
+  <!-- CREATE PRIVATE ROOM MODAL -->
+  <div id="create-room-modal" class="modal-overlay">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-plus-circle"></i> Create Chat Room</h3>
+        <button class="btn-icon closeModal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="create-room-form">
+        <div class="form-group">
+          <label for="new-room-name">Room Title</label>
+          <input type="text" id="new-room-name" placeholder="e.g. VIP Lounge" required maxlength="25">
+        </div>
+        <div class="form-group">
+          <label for="new-room-passkey">Optional Room Secret Passkey (PIN)</label>
+          <input type="password" id="new-room-passkey" placeholder="Leave empty for public room" maxlength="20">
+          <span class="input-hint">If set, only friends with this PIN can join this room.</span>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Create Room</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ENTER ROOM PASSKEY MODAL -->
+  <div id="room-passkey-modal" class="modal-overlay">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-lock"></i> Protected Room</h3>
+        <button class="btn-icon closeModal"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="room-passkey-form">
+        <input type="hidden" id="target-room-id">
+        <div class="form-group">
+          <label for="input-room-passkey">Enter Room Passkey</label>
+          <input type="password" id="input-room-passkey" placeholder="Enter PIN..." required>
+        </div>
+        <div id="room-passkey-error" class="error-badge hidden">Incorrect Room Passkey</div>
+        <button type="submit" class="btn btn-primary btn-block">Unlock Room</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- App Script -->
+  <script src="js/app.js"></script>
+</body>
+</html>
