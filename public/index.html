@@ -194,10 +194,10 @@
       <footer class="chat-input-area">
         <form id="message-form" class="message-form">
           <div class="input-actions">
-            <!-- Image Attachment Button -->
-            <label for="image-upload" class="btn-icon" title="Attach Ephemeral Image">
+            <!-- File Attachment Button (Allowed: Excel, PDF, Word, PPT, Image, Text) -->
+            <label for="image-upload" class="btn-icon" title="Attach Ephemeral File (Excel, PDF, Word, PPT, Image, Text)">
               <i class="fa-solid fa-paperclip"></i>
-              <input type="file" id="image-upload" accept="image/*" class="hidden-input">
+              <input type="file" id="image-upload" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.log,.md,.json" class="hidden-input">
             </label>
 
             <!-- Voice Note Record Button -->

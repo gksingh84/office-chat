@@ -180,7 +180,7 @@ io.on('connection', (socket) => {
   });
 
   // 3. Send Message (Room or Direct 1-on-1)
-  socket.on('send_message', ({ text, media, mediaType, recipientId }, callback) => {
+  socket.on('send_message', ({ text, media, mediaType, mediaName, recipientId }, callback) => {
     if (!isAuthenticated()) return;
 
     const user = users.get(socket.id);
@@ -191,8 +191,9 @@ io.on('connection', (socket) => {
       senderId: user.id,
       senderName: user.username,
       text: (text || '').slice(0, 2000),
-      media: media || null, // Base64 data URL for ephemeral image/audio
+      media: media || null, // Base64 data URL for ephemeral image/audio/document
       mediaType: mediaType || null,
+      mediaName: mediaName || null,
       timestamp: new Date().toISOString(),
       reactions: {}
     };

@@ -603,6 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
       text,
       media: currentMediaAttachment ? currentMediaAttachment.data : null,
       mediaType: currentMediaAttachment ? currentMediaAttachment.type : null,
+      mediaName: currentMediaAttachment ? currentMediaAttachment.name : null,
       recipientId: recipient
     };
 
@@ -622,22 +623,73 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Attachment Handler (Image File)
+  // Allowed file extensions helper (Excel, PDF, Word, PowerPoint, Image, Text)
+  const ALLOWED_DOC_EXTENSIONS = [
+    'xls', 'xlsx', 'csv',
+    'pdf',
+    'doc', 'docx',
+    'ppt', 'pptx',
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp',
+    'txt', 'log', 'md', 'json'
+  ];
+
+  function getFileTypeCategory(filename, mimeType = '') {
+    const ext = (filename.split('.').pop() || '').toLowerCase();
+    
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext) || mimeType.startsWith('image/')) {
+      return 'image';
+    }
+    if (ext === 'pdf' || mimeType.includes('pdf')) {
+      return 'pdf';
+    }
+    if (['xls', 'xlsx', 'csv'].includes(ext) || mimeType.includes('excel') || mimeType.includes('spreadsheet') || mimeType.includes('csv')) {
+      return 'excel';
+    }
+    if (['doc', 'docx'].includes(ext) || mimeType.includes('word') || mimeType.includes('officedocument.wordprocessingml')) {
+      return 'word';
+    }
+    if (['ppt', 'pptx'].includes(ext) || mimeType.includes('powerpoint') || mimeType.includes('presentationml')) {
+      return 'powerpoint';
+    }
+    if (['txt', 'log', 'md', 'json'].includes(ext) || mimeType.startsWith('text/')) {
+      return 'text';
+    }
+    return null;
+  }
+
+  // Attachment File Handler
   imageUpload.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (file.size > 8 * 1024 * 1024) {
-      alert('File too large. Maximum size is 8MB.');
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const category = getFileTypeCategory(file.name, file.type);
+
+    if (!category || !ALLOWED_DOC_EXTENSIONS.includes(ext)) {
+      alert('Not Allowed to send this file.');
+      imageUpload.value = '';
+      clearMediaAttachment();
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large. Maximum size is 10MB.');
+      imageUpload.value = '';
       return;
     }
 
     const reader = new FileReader();
     reader.onload = () => {
-      currentMediaAttachment = { data: reader.result, type: 'image', name: file.name };
-      previewImg.src = reader.result;
-      previewImg.classList.remove('hidden');
-      previewAudio.classList.add('hidden');
+      currentMediaAttachment = { data: reader.result, type: category, name: file.name };
+
+      if (category === 'image') {
+        previewImg.src = reader.result;
+        previewImg.classList.remove('hidden');
+        previewAudio.classList.add('hidden');
+      } else {
+        previewImg.classList.add('hidden');
+        previewAudio.classList.add('hidden');
+      }
       previewFilename.textContent = file.name;
       mediaPreviewBar.classList.remove('hidden');
     };
@@ -774,10 +826,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let mediaHTML = '';
     if (msg.media) {
+      const fileName = escapeHTML(msg.mediaName || 'Attachment');
       if (msg.mediaType === 'image') {
         mediaHTML = `<img src="${msg.media}" alt="Attachment" class="msg-media">`;
       } else if (msg.mediaType === 'audio') {
         mediaHTML = `<audio src="${msg.media}" controls class="msg-media"></audio>`;
+      } else if (msg.mediaType === 'pdf') {
+        mediaHTML = `<div class="doc-attachment-card"><div class="doc-icon pdf"><i class="fa-solid fa-file-pdf"></i></div><div class="doc-info"><span class="doc-name">${fileName}</span><a href="${msg.media}" download="${fileName}" class="doc-download-btn"><i class="fa-solid fa-download"></i> Download PDF</a></div></div>`;
+      } else if (msg.mediaType === 'excel') {
+        mediaHTML = `<div class="doc-attachment-card"><div class="doc-icon excel"><i class="fa-solid fa-file-excel"></i></div><div class="doc-info"><span class="doc-name">${fileName}</span><a href="${msg.media}" download="${fileName}" class="doc-download-btn"><i class="fa-solid fa-download"></i> Download Excel</a></div></div>`;
+      } else if (msg.mediaType === 'word') {
+        mediaHTML = `<div class="doc-attachment-card"><div class="doc-icon word"><i class="fa-solid fa-file-word"></i></div><div class="doc-info"><span class="doc-name">${fileName}</span><a href="${msg.media}" download="${fileName}" class="doc-download-btn"><i class="fa-solid fa-download"></i> Download Word</a></div></div>`;
+      } else if (msg.mediaType === 'powerpoint') {
+        mediaHTML = `<div class="doc-attachment-card"><div class="doc-icon ppt"><i class="fa-solid fa-file-powerpoint"></i></div><div class="doc-info"><span class="doc-name">${fileName}</span><a href="${msg.media}" download="${fileName}" class="doc-download-btn"><i class="fa-solid fa-download"></i> Download PPT</a></div></div>`;
+      } else if (msg.mediaType === 'text') {
+        mediaHTML = `<div class="doc-attachment-card"><div class="doc-icon text"><i class="fa-solid fa-file-lines"></i></div><div class="doc-info"><span class="doc-name">${fileName}</span><a href="${msg.media}" download="${fileName}" class="doc-download-btn"><i class="fa-solid fa-download"></i> Download Text File</a></div></div>`;
+      } else {
+        mediaHTML = `<div class="doc-attachment-card"><div class="doc-icon text"><i class="fa-solid fa-file"></i></div><div class="doc-info"><span class="doc-name">${fileName}</span><a href="${msg.media}" download="${fileName}" class="doc-download-btn"><i class="fa-solid fa-download"></i> Download File</a></div></div>`;
       }
     }
 

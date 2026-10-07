@@ -875,6 +875,81 @@ input:focus, textarea:focus {
   color: var(--text-main);
 }
 
+/* Document Attachment Cards */
+.doc-attachment-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-top: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+
+.outgoing .doc-attachment-card {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+.doc-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.doc-icon.pdf { background: rgba(239, 68, 68, 0.15); color: #dc2626; }
+.doc-icon.excel { background: rgba(16, 185, 129, 0.15); color: #059669; }
+.doc-icon.word { background: rgba(59, 130, 246, 0.15); color: #2563eb; }
+.doc-icon.ppt { background: rgba(249, 115, 22, 0.15); color: #ea580c; }
+.doc-icon.text { background: rgba(100, 116, 139, 0.15); color: #475569; }
+
+.outgoing .doc-icon {
+  background: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+}
+
+.doc-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.doc-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.doc-download-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.outgoing .doc-download-btn {
+  color: #ffffff;
+}
+
+.doc-download-btn:hover {
+  text-decoration: underline;
+}
+
 .msg-bubble {
   padding: 8px 14px;
   border-radius: var(--radius-lg);
