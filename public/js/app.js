@@ -340,6 +340,54 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
+    socket.on('message_deleted', ({ messageId }) => {
+      const msgGroup = chatMessages.querySelector(`[data-id="${messageId}"]`);
+      if (msgGroup) {
+        msgGroup.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+        msgGroup.style.opacity = '0';
+        msgGroup.style.transform = 'scale(0.85)';
+        setTimeout(() => msgGroup.remove(), 250);
+      }
+
+      for (const [peer, list] of dmStore.entries()) {
+        const filtered = list.filter(m => m.id !== messageId);
+        dmStore.set(peer, filtered);
+      }
+      saveDMStore();
+    });
+
+    socket.on('message_edited', ({ messageId, newText }) => {
+      const msgGroup = chatMessages.querySelector(`[data-id="${messageId}"]`);
+      if (msgGroup) {
+        const bubble = msgGroup.querySelector('.msg-bubble');
+        let textSpan = bubble.querySelector('.msg-text');
+        if (!textSpan) {
+          textSpan = document.createElement('span');
+          textSpan.className = 'msg-text';
+          bubble.prepend(textSpan);
+        }
+
+        textSpan.innerHTML = `${escapeHTML(newText)} <span class="edited-tag">(edited)</span>`;
+
+        const hasMedia = !!bubble.querySelector('.msg-media');
+        const isEmojiOnly = newText && !hasMedia && /^[\p{Extended_Pictographic}\s\u200d\ufe0f]+$/u.test(newText.trim());
+        if (isEmojiOnly) {
+          bubble.classList.add('emoji-only');
+        } else {
+          bubble.classList.remove('emoji-only');
+        }
+      }
+
+      for (const [peer, list] of dmStore.entries()) {
+        const item = list.find(m => m.id === messageId);
+        if (item) {
+          item.text = newText;
+          item.edited = true;
+        }
+      }
+      saveDMStore();
+    });
+
     socket.on('reaction_updated', ({ messageId, reactions }) => {
       updateMessageReactionsUI(messageId, reactions);
     });
@@ -712,7 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let bubbleInner = '';
     if (msg.text) {
-      bubbleInner += `<span class="msg-text">${escapeHTML(msg.text)}</span>`;
+      bubbleInner += `<span class="msg-text">${escapeHTML(msg.text)}${msg.edited ? ' <span class="edited-tag">(edited)</span>' : ''}</span>`;
     }
     if (mediaHTML) {
       bubbleInner += mediaHTML;
@@ -722,7 +770,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isEmojiOnly = msg.text && !msg.media && /^[\p{Extended_Pictographic}\s\u200d\ufe0f]+$/u.test(msg.text.trim());
 
-    group.innerHTML = `<div class="msg-meta">${metaSender}<span>${timeStr}</span></div><div class="msg-bubble ${isEmojiOnly ? 'emoji-only' : ''}">${bubbleInner}</div><div class="reactions-bar"></div>`;
+    let actionsHTML = '';
+    if (isOutgoing) {
+      actionsHTML = `
+        <div class="msg-actions">
+          ${msg.text ? `<button type="button" class="msg-act-btn btn-edit" title="Edit Message"><i class="fa-solid fa-pen"></i></button>` : ''}
+          <button type="button" class="msg-act-btn btn-delete" title="Delete Message / Attachment"><i class="fa-solid fa-trash-can"></i></button>
+        </div>
+      `;
+    }
+
+    group.innerHTML = `<div class="msg-meta">${metaSender}<span>${timeStr}</span></div><div class="msg-bubble-wrapper">${actionsHTML}<div class="msg-bubble ${isEmojiOnly ? 'emoji-only' : ''}">${bubbleInner}</div></div><div class="reactions-bar"></div>`;
+
+    if (isOutgoing) {
+      const btnDelete = group.querySelector('.btn-delete');
+      if (btnDelete) {
+        btnDelete.addEventListener('click', () => {
+          if (confirm('Delete this message for everyone?')) {
+            socket.emit('delete_message', {
+              messageId: msg.id,
+              recipientId: activeTarget.type === 'user' ? activeTarget.name : null
+            });
+          }
+        });
+      }
+
+      const btnEdit = group.querySelector('.btn-edit');
+      if (btnEdit) {
+        btnEdit.addEventListener('click', () => {
+          startInlineEdit(group, msg);
+        });
+      }
+    }
 
     group.querySelector('.msg-bubble').addEventListener('dblclick', () => {
       socket.emit('add_reaction', { messageId: msg.id, emoji: '❤️' });
@@ -730,6 +809,71 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chatMessages.appendChild(group);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function startInlineEdit(group, msg) {
+    const bubble = group.querySelector('.msg-bubble');
+    if (!bubble || bubble.querySelector('.inline-edit-box')) return;
+
+    const originalText = msg.text || '';
+    
+    bubble.classList.add('editing');
+    bubble.innerHTML = `
+      <div class="inline-edit-box">
+        <textarea class="edit-textarea" rows="2">${escapeHTML(originalText)}</textarea>
+        <div class="edit-btn-row">
+          <button type="button" class="btn-edit-save"><i class="fa-solid fa-check"></i> Save</button>
+          <button type="button" class="btn-edit-cancel"><i class="fa-solid fa-xmark"></i> Cancel</button>
+        </div>
+      </div>
+    `;
+
+    const textarea = bubble.querySelector('.edit-textarea');
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    const saveEdit = () => {
+      const newText = textarea.value.trim();
+      if (newText && newText !== originalText) {
+        socket.emit('edit_message', {
+          messageId: msg.id,
+          newText,
+          recipientId: activeTarget.type === 'user' ? activeTarget.name : null
+        });
+      } else {
+        cancelEdit();
+      }
+    };
+
+    const cancelEdit = () => {
+      msg.text = originalText;
+      bubble.classList.remove('editing');
+      const isEmojiOnly = originalText && !msg.media && /^[\p{Extended_Pictographic}\s\u200d\ufe0f]+$/u.test(originalText.trim());
+      
+      let mediaHTML = '';
+      if (msg.media) {
+        if (msg.mediaType === 'image') mediaHTML = `<img src="${msg.media}" alt="Attachment" class="msg-media">`;
+        else if (msg.mediaType === 'audio') mediaHTML = `<audio src="${msg.media}" controls class="msg-media"></audio>`;
+      }
+      
+      let inner = `<span class="msg-text">${escapeHTML(originalText)}${msg.edited ? ' <span class="edited-tag">(edited)</span>' : ''}</span>`;
+      if (mediaHTML) inner += mediaHTML;
+
+      bubble.className = `msg-bubble ${isEmojiOnly ? 'emoji-only' : ''}`;
+      bubble.innerHTML = inner;
+    };
+
+    bubble.querySelector('.btn-edit-save').addEventListener('click', saveEdit);
+    bubble.querySelector('.btn-edit-cancel').addEventListener('click', cancelEdit);
+
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        saveEdit();
+      } else if (e.key === 'Escape') {
+        cancelEdit();
+      }
+    });
   }
 
   function updateMessageReactionsUI(messageId, reactions) {

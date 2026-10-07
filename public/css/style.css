@@ -741,6 +741,121 @@ input:focus, textarea:focus {
   color: var(--text-muted);
 }
 
+.msg-bubble-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+}
+
+.outgoing .msg-bubble-wrapper {
+  align-items: flex-end;
+}
+
+.incoming .msg-bubble-wrapper {
+  align-items: flex-start;
+}
+
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: var(--transition);
+  margin-bottom: 2px;
+}
+
+.msg-group:hover .msg-actions {
+  opacity: 1;
+}
+
+.msg-act-btn {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #cbd5e1;
+  color: var(--text-muted);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+}
+
+.msg-act-btn:hover {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  transform: scale(1.15);
+}
+
+.msg-act-btn.btn-delete:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+.edited-tag {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-left: 4px;
+  opacity: 0.85;
+}
+
+.outgoing .edited-tag {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Inline Edit UI */
+.inline-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 240px;
+  max-width: 100%;
+}
+
+.edit-textarea {
+  width: 100%;
+  font-size: 14px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--primary);
+  outline: none;
+  resize: vertical;
+  background: #ffffff;
+  color: var(--text-main);
+}
+
+.edit-btn-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.btn-edit-save, .btn-edit-cancel {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-edit-save {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-edit-cancel {
+  background: #e2e8f0;
+  color: var(--text-main);
+}
+
 .msg-bubble {
   padding: 8px 14px;
   border-radius: var(--radius-lg);

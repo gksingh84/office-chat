@@ -284,7 +284,84 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 6. Burn Room / Wipe Chat History Immediately
+  // 6. Delete Message / Attachment
+  socket.on('delete_message', ({ messageId, recipientId }) => {
+    if (!isAuthenticated()) return;
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    if (recipientId) {
+      // Direct Message Deletion
+      const targetKey = String(recipientId).trim().toLowerCase();
+      let recipientSocketId = null;
+      for (const [sId, u] of users.entries()) {
+        if (sId === recipientId || u.username.trim().toLowerCase() === targetKey) {
+          recipientSocketId = sId;
+          break;
+        }
+      }
+      if (recipientSocketId) {
+        io.to(recipientSocketId).emit('message_deleted', { messageId });
+      }
+      socket.emit('message_deleted', { messageId });
+    } else {
+      // Room Message Deletion
+      const roomId = user.currentRoom;
+      if (!roomId || !rooms.has(roomId)) return;
+
+      const room = rooms.get(roomId);
+      const index = room.messages.findIndex(m => m.id === messageId);
+      if (index > -1) {
+        const msg = room.messages[index];
+        if (msg.senderName.toLowerCase() === user.username.toLowerCase()) {
+          room.messages.splice(index, 1);
+          io.to(roomId).emit('message_deleted', { messageId, roomId });
+        }
+      }
+    }
+  });
+
+  // 7. Edit Message Text
+  socket.on('edit_message', ({ messageId, newText, recipientId }) => {
+    if (!isAuthenticated()) return;
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const sanitizedText = (newText || '').slice(0, 2000).trim();
+    if (!sanitizedText) return;
+
+    if (recipientId) {
+      // Direct Message Edit
+      const targetKey = String(recipientId).trim().toLowerCase();
+      let recipientSocketId = null;
+      for (const [sId, u] of users.entries()) {
+        if (sId === recipientId || u.username.trim().toLowerCase() === targetKey) {
+          recipientSocketId = sId;
+          break;
+        }
+      }
+
+      const payload = { messageId, newText: sanitizedText, isEdited: true };
+      if (recipientSocketId) {
+        io.to(recipientSocketId).emit('message_edited', payload);
+      }
+      socket.emit('message_edited', payload);
+    } else {
+      // Room Message Edit
+      const roomId = user.currentRoom;
+      if (!roomId || !rooms.has(roomId)) return;
+
+      const room = rooms.get(roomId);
+      const msg = room.messages.find(m => m.id === messageId);
+      if (msg && msg.senderName.toLowerCase() === user.username.toLowerCase()) {
+        msg.text = sanitizedText;
+        msg.edited = true;
+        io.to(roomId).emit('message_edited', { messageId, newText: sanitizedText, isEdited: true, roomId });
+      }
+    }
+  });
+
+  // 8. Burn Room / Wipe Chat History Immediately
   socket.on('burn_room', () => {
     if (!isAuthenticated()) return;
     const user = users.get(socket.id);
