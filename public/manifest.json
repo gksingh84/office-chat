@@ -1,15 +1,21 @@
 {
   "name": "Office-ChatBox",
   "short_name": "Office-ChatBox",
+  "description": "Secure, ephemeral, passkey-protected instant messaging web app.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#4f46e5",
   "icons": [
     {
-      "src": "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/svgs/solid/user-shield.svg",
+      "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
     }
   ]
 }

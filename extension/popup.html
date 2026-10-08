@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Office-ChatBox Mini Extension</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="ext-header">
+    <div class="brand">
+      <div class="brand-icon"><i class="fa-solid fa-user-shield"></i></div>
+      <div class="brand-text">
+        <h2>Office-ChatBox</h2>
+        <span class="server-status" id="server-status-label"><span class="status-dot online"></span> Localhost (3000)</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button type="button" id="btn-popout-right" class="action-btn primary" title="Launch Floating Window on Right Corner of Screen">
+        <i class="fa-solid fa-up-right-from-square"></i> Pop-out Right
+      </button>
+      <button type="button" id="btn-toggle-settings" class="action-btn secondary" title="Server Settings">
+        <i class="fa-solid fa-gear"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Settings Panel (Hidden by default) -->
+  <div id="settings-panel" class="settings-panel hidden">
+    <div class="settings-content">
+      <label for="server-url-input">Chat Server URL:</label>
+      <div class="input-group">
+        <input type="text" id="server-url-input" value="http://localhost:3000" placeholder="http://localhost:3000">
+        <button type="button" id="btn-save-server" class="btn-save">Save</button>
+      </div>
+      <div class="presets-row">
+        <button type="button" class="preset-chip active" data-url="http://localhost:3000"><i class="fa-solid fa-desktop"></i> Localhost:3000</button>
+        <button type="button" class="preset-chip" id="preset-render" data-url="https://office-chat.onrender.com"><i class="fa-solid fa-cloud"></i> Render URL</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Iframe Container -->
+  <main class="frame-container">
+    <iframe id="chat-frame" src="http://localhost:3000" allow="microphone; camera; autoplay"></iframe>
+    <div id="frame-loader" class="frame-loader hidden">
+      <div class="spinner"></div>
+      <p>Connecting to Localhost Chat Server...</p>
+      <small>Make sure <code>npm start</code> is running on port 3000</small>
+    </div>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

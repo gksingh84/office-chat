@@ -137,6 +137,34 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnLaunchPopoutLogin) btnLaunchPopoutLogin.addEventListener('click', launchPopoutWindow);
   if (btnPopoutApp) btnPopoutApp.addEventListener('click', launchPopoutWindow);
 
+  // Register PWA Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+
+  // PWA Installation Prompt Handler
+  let deferredPrompt = null;
+  const btnPWAInstall = document.getElementById('btn-pwa-install');
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (btnPWAInstall) btnPWAInstall.classList.remove('hidden');
+  });
+
+  if (btnPWAInstall) {
+    btnPWAInstall.addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          btnPWAInstall.classList.add('hidden');
+        }
+        deferredPrompt = null;
+      }
+    });
+  }
+
   // Check if running inside small window or PWA mode
   if (window.innerWidth <= 600 || window.matchMedia('(display-mode: standalone)').matches) {
     document.body.classList.add('mini-window-mode');
@@ -431,10 +459,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('user_joined_room', ({ username }) => {
+      if (currentUser.username && username && username.trim().toLowerCase() === currentUser.username.trim().toLowerCase()) return;
       appendSystemNotice(`${username} joined the chat`);
     });
 
     socket.on('user_left_room', ({ username }) => {
+      if (currentUser.username && username && username.trim().toLowerCase() === currentUser.username.trim().toLowerCase()) return;
       appendSystemNotice(`${username} left the chat`);
     });
   }

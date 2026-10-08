@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Office-ChatBox Mini Messenger",
+  "version": "1.0.0",
+  "description": "Instant Ephemeral Chat popup and right-hand side floating window extension for Chrome & Edge.",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    },
+    "default_title": "Open Office-ChatBox Mini"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "windows",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*/*"
+  ],
+  "side_panel": {
+    "default_path": "popup.html"
+  }
+}

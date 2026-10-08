@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 3000;
 // HTTP Security Headers Middleware
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'self' chrome-extension://* moz-extension://* http://localhost:* https://*.onrender.com");
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
@@ -110,7 +110,8 @@ io.on('connection', (socket) => {
         username: cleanUsername,
         lastRoom: null,
         disconnectTimer: null,
-        isExplicitLogout: false
+        isExplicitLogout: false,
+        isNewLogin: true
       };
       userSessions.set(key, session);
     }
@@ -172,20 +173,15 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const previousRoom = user.currentRoom || (session ? session.lastRoom : null);
-    const isSameRoomReconnect = (previousRoom === targetRoomId);
+    const previousRoom = user.currentRoom;
 
-    // Leave current room if switching rooms
+    // Leave previous socket room if switching
     if (previousRoom && previousRoom !== targetRoomId) {
       socket.leave(previousRoom);
-      socket.to(previousRoom).emit('user_left_room', {
-        userId: user.id,
-        username: user.username,
-        roomId: previousRoom
-      });
+      broadcastRoomUsers(previousRoom);
     }
 
-    // Join target room
+    // Join target socket room
     socket.join(targetRoomId);
     user.currentRoom = targetRoomId;
     if (session) session.lastRoom = targetRoomId;
@@ -203,8 +199,9 @@ io.on('connection', (socket) => {
       });
     }
 
-    // Notify members in room ONLY if user wasn't already in this room before reconnecting
-    if (!isSameRoomReconnect) {
+    // Notify members in room ONLY on initial new login (suppress on F5 refresh and room browsing)
+    if (session && session.isNewLogin) {
+      session.isNewLogin = false;
       socket.to(targetRoomId).emit('user_joined_room', {
         userId: user.id,
         username: user.username,
@@ -481,6 +478,7 @@ io.on('connection', (socket) => {
           username: user.username,
           roomId: currentRoom
         });
+        broadcastRoomUsers(currentRoom);
       }
 
       users.delete(socket.id);
@@ -498,9 +496,11 @@ io.on('connection', (socket) => {
     console.log(`[-] Socket disconnected: ${user.username} (${socket.id})`);
     const key = user.username.trim().toLowerCase();
     const session = userSessions.get(key);
+    const lastRoom = user.currentRoom || (session ? session.lastRoom : null);
 
     users.delete(socket.id);
     broadcastOnlineUsers();
+    if (lastRoom) broadcastRoomUsers(lastRoom);
 
     if (session && !session.isExplicitLogout) {
       // Check if user has any remaining socket connections
@@ -526,11 +526,13 @@ io.on('connection', (socket) => {
           }
 
           if (!reconnected) {
-            if (session.lastRoom) {
-              io.to(session.lastRoom).emit('user_left_room', {
+            const targetRoom = session.lastRoom || lastRoom;
+            if (targetRoom) {
+              io.to(targetRoom).emit('user_left_room', {
                 username: session.username,
-                roomId: session.lastRoom
+                roomId: targetRoom
               });
+              broadcastRoomUsers(targetRoom);
             }
             userSessions.delete(key);
             broadcastOnlineUsers();
