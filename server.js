@@ -97,7 +97,27 @@ io.on('connection', (socket) => {
     }
 
     const cleanUsername = (username || 'Anonymous').trim().slice(0, 20);
+    if (!cleanUsername || cleanUsername.length < 2) {
+      if (typeof callback === 'function') {
+        callback({ success: false, error: 'Username must be at least 2 characters long.' });
+      }
+      return;
+    }
+
     const key = cleanUsername.toLowerCase();
+
+    // Enforce Unique Username across all active online users
+    for (const [sId, u] of users.entries()) {
+      if (sId !== socket.id && u && u.authenticated && u.username && u.username.trim().toLowerCase() === key) {
+        if (typeof callback === 'function') {
+          callback({ 
+            success: false, 
+            error: `Username "${cleanUsername}" is already taken by an active online colleague. Please pick a different alias.` 
+          });
+        }
+        return;
+      }
+    }
 
     let session = userSessions.get(key);
     if (session) {
