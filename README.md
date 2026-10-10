@@ -10,7 +10,13 @@
    - Only users who possess the master secret passkey can enter and use the app.
    - Access passkey is verified before any chat data or socket stream is unlocked.
 
-2. **🙈 Complete Privacy ("No user should see other users' chats")**:
+2. **🛡️ End-to-End Encryption (E2EE)**:
+   - **Zero Plaintext on Server**: Powered by native browser Web Crypto API (`SubtleCrypto`). All message texts, attachments, and voice notes are encrypted in the user's browser before transmission over WebSockets.
+   - **Room Encryption**: Uses **AES-256-GCM** with **PBKDF2** key derivation (100,000 iterations + SHA-256).
+   - **1-on-1 Direct Messaging**: Uses **ECDH (Elliptic-Curve Diffie-Hellman P-256)** key exchange to derive shared AES-256 keys.
+   - **Visual Verification**: Displays a green `🔒 E2EE Encrypted` badge in the header and lock tags on encrypted messages.
+
+3. **🙈 Complete Privacy ("No user should see other users' chats")**:
    - **Private Lounges**: Create custom rooms with optional extra PIN passkeys. Users in Room A cannot view or sniff messages from Room B.
    - **1-on-1 Direct Messaging**: Click any online colleague's alias to initiate a private, isolated 1-on-1 session.
 

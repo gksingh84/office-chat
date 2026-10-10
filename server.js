@@ -88,7 +88,7 @@ io.on('connection', (socket) => {
   console.log(`[+] New socket connection: ${socket.id}`);
 
   // 1. Authenticate with Master Passkey
-  socket.on('authenticate', ({ passkey, username }, callback) => {
+  socket.on('authenticate', ({ passkey, username, publicKey }, callback) => {
     if (passkey !== APP_PASSKEY) {
       if (typeof callback === 'function') {
         callback({ success: false, error: 'Incorrect Passkey! Access Denied.' });
@@ -122,7 +122,8 @@ io.on('connection', (socket) => {
       id: socket.id,
       username: cleanUsername,
       currentRoom: session.lastRoom,
-      authenticated: true
+      authenticated: true,
+      publicKey: publicKey || null
     });
 
     if (typeof callback === 'function') {
@@ -134,6 +135,16 @@ io.on('connection', (socket) => {
     }
 
     broadcastOnlineUsers();
+  });
+
+  // Listener to update/publish user's ECDH public key for E2EE DMs
+  socket.on('publish_public_key', ({ publicKey }) => {
+    const u = users.get(socket.id);
+    if (u && u.authenticated) {
+      u.publicKey = publicKey || null;
+      users.set(socket.id, u);
+      broadcastOnlineUsers();
+    }
   });
 
   // Middleware guard for authenticated sockets
@@ -237,7 +248,7 @@ io.on('connection', (socket) => {
   }
 
   // 3. Send Message (Room or Direct 1-on-1)
-  socket.on('send_message', ({ text, media, mediaType, mediaName, recipientId }, callback) => {
+  socket.on('send_message', ({ text, media, mediaType, mediaName, encryptedPayload, recipientId }, callback) => {
     if (!isAuthenticated()) return;
 
     const user = users.get(socket.id);
@@ -271,6 +282,7 @@ io.on('connection', (socket) => {
       media: media || null,
       mediaType: mediaType ? String(mediaType).slice(0, 30) : null,
       mediaName: mediaName ? String(mediaName).slice(0, 100) : null,
+      encryptedPayload: encryptedPayload || null,
       timestamp: new Date().toISOString(),
       reactions: {}
     };
@@ -563,7 +575,8 @@ function broadcastOnlineUsers() {
       activeUsersMap.set(u.username.trim().toLowerCase(), {
         id: u.id,
         username: u.username.trim(),
-        currentRoom: u.currentRoom
+        currentRoom: u.currentRoom,
+        publicKey: u.publicKey || null
       });
     }
   }

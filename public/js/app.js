@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let mediaRecorder = null;
   let audioChunks = [];
   let currentMediaAttachment = null;
+  let currentRoomPasskey = '';
 
   // Client-side Storage for 1-on-1 Direct Messages (Persists on F5 refresh, wiped when tab closes)
   const dmStore = new Map(); // Key: lowerCasePeerUsername -> Array of msgObj
@@ -244,8 +245,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function initSocketConnection(passkey, username) {
+  async function initSocketConnection(passkey, username) {
     if (socket) socket.disconnect();
+
+    const pubKeyJWK = await E2EE.initIdentityKeyPair(username);
 
     socket = io({
       reconnectionAttempts: 5,
@@ -253,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('connect', () => {
-      socket.emit('authenticate', { passkey, username }, (res) => {
+      socket.emit('authenticate', { passkey, username, publicKey: pubKeyJWK }, (res) => {
         if (res.success) {
           currentUser = { id: res.user.id, username: res.user.username, passkey };
           
@@ -307,6 +310,45 @@ document.addEventListener('DOMContentLoaded', () => {
     appContainer.classList.add('hidden');
   }
 
+  // Helper: E2EE Decryption for Incoming / History Messages
+  async function processDecryption(msg) {
+    if (!msg || !msg.encryptedPayload || !E2EE.isSupported) return msg;
+    if (msg._isDecrypted) return msg;
+
+    try {
+      let key = null;
+      if (msg.isDirect) {
+        const isMyMsg = (msg.senderId === socket.id) || 
+                        (currentUser.username && msg.senderName.toLowerCase() === currentUser.username.toLowerCase());
+        const peerName = isMyMsg ? msg.recipientName : msg.senderName;
+        if (peerName) {
+          const peerUser = onlineUsers.find(u => u.username && u.username.toLowerCase() === peerName.toLowerCase());
+          if (peerUser && peerUser.publicKey) {
+            key = await E2EE.getDMKey(peerName, peerUser.publicKey);
+          }
+        }
+      } else {
+        const roomId = activeTarget.type === 'room' ? activeTarget.id : (socket.currentRoomId || 'lobby');
+        key = await E2EE.getRoomKey(roomId, currentRoomPasskey, currentUser.passkey || 'passkey4321');
+      }
+
+      if (key) {
+        const decrypted = await E2EE.decryptPayload(key, msg.encryptedPayload);
+        if (decrypted) {
+          msg.text = decrypted.text;
+          msg.media = decrypted.media;
+          msg.mediaType = decrypted.mediaType;
+          msg.mediaName = decrypted.mediaName;
+          msg.isE2EE = true;
+          msg._isDecrypted = true;
+        }
+      }
+    } catch (e) {
+      console.warn('[E2EE] Decryption error:', e);
+    }
+    return msg;
+  }
+
   // 2. SOCKET EVENT LISTENERS
   function setupSocketListeners() {
     socket.on('online_users', (users) => {
@@ -320,7 +362,9 @@ document.addEventListener('DOMContentLoaded', () => {
       renderRoomsList();
     });
 
-    socket.on('new_message', (msg) => {
+    socket.on('new_message', async (msg) => {
+      await processDecryption(msg);
+
       if (msg.isDirect) {
         // Determine peer name
         const isMyMessage = (msg.senderId === socket.id) || 
@@ -330,6 +374,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!peerName) return;
 
         const key = peerName.toLowerCase();
+        await ChatDB.saveMessage(msg, key);
+
         if (!dmStore.has(key)) {
           dmStore.set(key, []);
         }
@@ -356,6 +402,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } else {
         // Room Message Routing
+        const roomId = msg.roomId || socket.currentRoomId || 'lobby';
+        await ChatDB.saveMessage(msg, roomId);
+
         const isForCurrentRoom = activeTarget.type === 'room' && activeTarget.id === socket.currentRoomId;
         if (isForCurrentRoom) {
           if (!chatMessages.querySelector(`[data-id="${msg.id}"]`)) {
@@ -369,6 +418,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('message_deleted', ({ messageId, deletedBy }) => {
+      ChatDB.deleteMessage(messageId);
+
+      const msgGroup = chatMessages.querySelector(`[data-id="${messageId}"]`);
       const msgGroup = chatMessages.querySelector(`[data-id="${messageId}"]`);
       
       const isMyDeletion = currentUser.username && deletedBy && 
@@ -452,6 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('room_burned', ({ roomId, burnedBy }) => {
+      ChatDB.clearTargetMessages(roomId);
       if (activeTarget.type === 'room' && activeTarget.id === roomId) {
         chatMessages.innerHTML = '';
         appendSystemNotice(`Room History Burned by ${burnedBy}`);
@@ -535,7 +588,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function joinRoom(roomId, passkey = '') {
-    socket.emit('join_room', { roomId, roomPasskey: passkey }, (res) => {
+    currentRoomPasskey = passkey;
+    socket.emit('join_room', { roomId, roomPasskey: passkey }, async (res) => {
       if (res.success) {
         socket.currentRoomId = res.room.id;
         activeTarget = { type: 'room', id: res.room.id, name: res.room.name };
@@ -555,8 +609,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chatMessages.innerHTML = '';
 
+        // 1. Load persistent history from local IndexedDB
+        const localHistory = await ChatDB.getMessagesForTarget(res.room.id);
+        for (const msg of localHistory) {
+          await processDecryption(msg);
+          if (!chatMessages.querySelector(`[data-id="${msg.id}"]`)) {
+            appendMessage(msg);
+          }
+        }
+
+        // 2. Merge incoming room buffer from server
         if (res.room.messages) {
-          res.room.messages.forEach(appendMessage);
+          for (const msg of res.room.messages) {
+            await processDecryption(msg);
+            await ChatDB.saveMessage(msg, res.room.id);
+            if (!chatMessages.querySelector(`[data-id="${msg.id}"]`)) {
+              appendMessage(msg);
+            }
+          }
         }
 
         renderRoomsList();
@@ -570,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function startDirectMessage(user) {
+  async function startDirectMessage(user) {
     activeTarget = { type: 'user', id: user.id, name: user.username };
 
     // Reset unread count for this peer
@@ -585,13 +655,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chatMessages.innerHTML = '';
 
-    // Load DM History from client memory
-    const history = dmStore.get(key) || [];
-    history.forEach(msg => {
+    // Load DM History from local IndexedDB
+    const localHistory = await ChatDB.getMessagesForTarget(key);
+    for (const msg of localHistory) {
+      await processDecryption(msg);
       if (!chatMessages.querySelector(`[data-id="${msg.id}"]`)) {
         appendMessage(msg);
       }
-    });
+    }
 
     sidebar.classList.remove('open');
   }
@@ -620,8 +691,8 @@ document.addEventListener('DOMContentLoaded', () => {
     joinRoom(roomId, passkey);
   });
 
-  // 5. MESSAGE SENDING & MEDIA ATTACHMENTS
-  messageForm.addEventListener('submit', (e) => {
+  // 5. MESSAGE SENDING & MEDIA ATTACHMENTS (WITH E2EE ENCRYPTION)
+  messageForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const text = messageInput.value.trim();
 
@@ -629,16 +700,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const recipient = activeTarget.type === 'user' ? activeTarget.name : null;
 
-    const payload = {
+    const payloadObject = {
       text,
       media: currentMediaAttachment ? currentMediaAttachment.data : null,
       mediaType: currentMediaAttachment ? currentMediaAttachment.type : null,
-      mediaName: currentMediaAttachment ? currentMediaAttachment.name : null,
+      mediaName: currentMediaAttachment ? currentMediaAttachment.name : null
+    };
+
+    let encryptedPayload = null;
+    if (E2EE.isSupported) {
+      if (activeTarget.type === 'user') {
+        const peerUser = onlineUsers.find(u => u.username && u.username.toLowerCase() === activeTarget.name.toLowerCase());
+        if (peerUser && peerUser.publicKey) {
+          const dmKey = await E2EE.getDMKey(activeTarget.name, peerUser.publicKey);
+          if (dmKey) {
+            encryptedPayload = await E2EE.encryptPayload(dmKey, payloadObject);
+          }
+        }
+      } else if (activeTarget.type === 'room') {
+        const roomKey = await E2EE.getRoomKey(activeTarget.id, currentRoomPasskey, currentUser.passkey || 'passkey4321');
+        if (roomKey) {
+          encryptedPayload = await E2EE.encryptPayload(roomKey, payloadObject);
+        }
+      }
+    }
+
+    const payload = {
+      text: encryptedPayload ? '[🔒 E2EE Encrypted Message]' : text,
+      media: encryptedPayload ? null : (currentMediaAttachment ? currentMediaAttachment.data : null),
+      mediaType: encryptedPayload ? null : (currentMediaAttachment ? currentMediaAttachment.type : null),
+      mediaName: encryptedPayload ? null : (currentMediaAttachment ? currentMediaAttachment.name : null),
+      encryptedPayload: encryptedPayload,
       recipientId: recipient
     };
 
-    socket.emit('send_message', payload, (res) => {
+    socket.emit('send_message', payload, async (res) => {
       if (res.success) {
+        if (res.message) {
+          await processDecryption(res.message);
+          const targetKey = activeTarget.type === 'user' ? activeTarget.name : activeTarget.id;
+          await ChatDB.saveMessage(res.message, targetKey);
+        }
+
         messageInput.value = '';
         messageInput.style.height = '46px';
         clearMediaAttachment();
@@ -908,7 +1011,10 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }
 
-    group.innerHTML = `<div class="msg-meta">${metaSender}<span>${timeStr}</span></div><div class="msg-bubble-wrapper">${actionsHTML}<div class="msg-bubble ${isEmojiOnly ? 'emoji-only' : ''}">${bubbleInner}</div></div><div class="reactions-bar"></div>`;
+    const isE2EE = !!(msg.encryptedPayload || msg.isE2EE);
+    const e2eeTag = isE2EE ? `<i class="fa-solid fa-lock message-e2ee-tag" title="End-to-End Encrypted (AES-256-GCM)"></i>` : '';
+
+    group.innerHTML = `<div class="msg-meta">${metaSender}<span>${timeStr}</span>${e2eeTag}</div><div class="msg-bubble-wrapper">${actionsHTML}<div class="msg-bubble ${isEmojiOnly ? 'emoji-only' : ''}">${bubbleInner}</div></div><div class="reactions-bar"></div>`;
 
     if (isOutgoing) {
       const btnDelete = group.querySelector('.btn-delete');
@@ -1038,12 +1144,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activeTarget.type === 'room') {
       if (confirm('Burn all messages in this room for everyone?')) {
         socket.emit('burn_room');
+        ChatDB.clearTargetMessages(activeTarget.id);
       }
     } else {
       chatMessages.innerHTML = '';
       if (activeTarget.type === 'user') {
-        dmStore.set(activeTarget.name.toLowerCase(), []);
+        const key = activeTarget.name.toLowerCase();
+        dmStore.set(key, []);
         saveDMStore();
+        ChatDB.clearTargetMessages(key);
       }
     }
   });
