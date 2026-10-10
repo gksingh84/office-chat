@@ -68,6 +68,8 @@ app.post('/api/verify-passkey', (req, res) => {
 const REGISTRY_FILE = path.join(__dirname, 'registered_users.json');
 const registeredUsers = new Map(); // key -> { username, userTokens: [], pinHash, createdAt, lastLoginAt }
 
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000; // 30 days inactivity limit
+
 function loadRegisteredUsers() {
   try {
     if (fs.existsSync(REGISTRY_FILE)) {
@@ -76,7 +78,7 @@ function loadRegisteredUsers() {
       for (const [k, v] of Object.entries(data)) {
         registeredUsers.set(k.toLowerCase(), v);
       }
-      console.log(`[+] Loaded ${registeredUsers.size} permanently registered usernames.`);
+      console.log(`[+] Loaded ${registeredUsers.size} registered usernames.`);
     }
   } catch (e) {
     console.error('[-] Error loading registered_users.json:', e.message);
@@ -95,7 +97,25 @@ function saveRegisteredUsers() {
   }
 }
 
+function pruneIdleUsernames() {
+  const now = Date.now();
+  let count = 0;
+  for (const [key, reg] of registeredUsers.entries()) {
+    const lastActive = reg.lastLoginAt || reg.createdAt;
+    if (lastActive && (now - new Date(lastActive).getTime() >= THIRTY_DAYS_MS)) {
+      registeredUsers.delete(key);
+      count++;
+    }
+  }
+  if (count > 0) {
+    console.log(`[+] Auto-pruned ${count} idle usernames (inactive for 30+ days).`);
+    saveRegisteredUsers();
+  }
+}
+
 loadRegisteredUsers();
+pruneIdleUsernames();
+setInterval(pruneIdleUsernames, 24 * 60 * 60 * 1000);
 
 // In-memory data store (NO database, strictly in RAM)
 const users = new Map();
@@ -154,8 +174,19 @@ io.on('connection', (socket) => {
       }
     }
 
-    // 2. Permanent Username Reservation & Verification
+    // 2. Permanent Username Reservation & Verification (Auto-expires after 30 days of inactivity)
     let reg = registeredUsers.get(key);
+
+    if (reg) {
+      const lastActive = reg.lastLoginAt || reg.createdAt;
+      const isExpired = lastActive && (Date.now() - new Date(lastActive).getTime() >= THIRTY_DAYS_MS);
+
+      if (isExpired) {
+        console.log(`[+] Username "${cleanUsername}" auto-expired due to 30+ days of inactivity. Freeing up for new registration.`);
+        registeredUsers.delete(key);
+        reg = null;
+      }
+    }
 
     if (reg) {
       // Username is already permanently registered! Verify ownership token or PIN
