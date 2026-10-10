@@ -1197,7 +1197,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (socket) socket.disconnect();
         appContainer.classList.add('hidden');
         authModal.classList.add('active');
-        usernameInput.value = '';
+        if (passkeyInput) passkeyInput.value = '';
+        if (usernameInput) usernameInput.value = '';
+        if (userPinInput) userPinInput.value = '';
+        if (authForm) authForm.reset();
       }
     });
   }
