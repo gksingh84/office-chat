@@ -438,29 +438,11 @@ document.addEventListener('DOMContentLoaded', () => {
       ChatDB.deleteMessage(messageId);
 
       const msgGroup = chatMessages.querySelector(`[data-id="${messageId}"]`);
-      
-      const isMyDeletion = currentUser.username && deletedBy && 
-                           deletedBy.toLowerCase() === currentUser.username.toLowerCase();
-
       if (msgGroup) {
-        if (isMyDeletion) {
-          msgGroup.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
-          msgGroup.style.opacity = '0';
-          msgGroup.style.transform = 'scale(0.85)';
-          setTimeout(() => msgGroup.remove(), 250);
-        } else {
-          msgGroup.className = 'msg-group system-notice-group';
-          msgGroup.innerHTML = `
-            <div class="msg-deleted-notice">
-              <i class="fa-solid fa-trash-can"></i>
-              <span>${escapeHTML(deletedBy || 'Someone')} deleted a message / attachment</span>
-            </div>
-          `;
-          playPopSound();
-        }
-      } else if (!isMyDeletion) {
-        appendSystemNotice(`${deletedBy || 'Someone'} deleted a message / attachment`);
-        playPopSound();
+        msgGroup.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+        msgGroup.style.opacity = '0';
+        msgGroup.style.transform = 'scale(0.85)';
+        setTimeout(() => msgGroup.remove(), 250);
       }
 
       for (const [peer, list] of dmStore.entries()) {

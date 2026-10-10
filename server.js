@@ -378,39 +378,36 @@ io.on('connection', (socket) => {
   socket.on('delete_message', ({ messageId, recipientId }) => {
     if (!isAuthenticated()) return;
     const user = users.get(socket.id);
-    if (!user) return;
+    if (!user || !messageId) return;
 
     const deleterName = user.username;
 
     if (recipientId) {
       // Direct Message Deletion
       const targetKey = String(recipientId).trim().toLowerCase();
-      let recipientSocketId = null;
+      const myKey = user.username.trim().toLowerCase();
+      const payload = { messageId, deletedBy: deleterName, isDirect: true };
+
       for (const [sId, u] of users.entries()) {
-        if (sId === recipientId || u.username.trim().toLowerCase() === targetKey) {
-          recipientSocketId = sId;
-          break;
+        if (u && u.username) {
+          const uKey = u.username.trim().toLowerCase();
+          if (uKey === targetKey || uKey === myKey || sId === recipientId) {
+            io.to(sId).emit('message_deleted', payload);
+          }
         }
       }
-      const payload = { messageId, deletedBy: deleterName, isDirect: true };
-      if (recipientSocketId) {
-        io.to(recipientSocketId).emit('message_deleted', payload);
-      }
-      socket.emit('message_deleted', payload);
     } else {
       // Room Message Deletion
       const roomId = user.currentRoom;
-      if (!roomId || !rooms.has(roomId)) return;
-
-      const room = rooms.get(roomId);
-      const index = room.messages.findIndex(m => m.id === messageId);
-      if (index > -1) {
-        const msg = room.messages[index];
-        if (msg.senderName.toLowerCase() === user.username.toLowerCase()) {
+      if (roomId && rooms.has(roomId)) {
+        const room = rooms.get(roomId);
+        const index = room.messages.findIndex(m => m.id === messageId);
+        if (index > -1) {
           room.messages.splice(index, 1);
-          io.to(roomId).emit('message_deleted', { messageId, deletedBy: deleterName, roomId, isDirect: false });
         }
       }
+      const targetRoom = user.currentRoom || 'lobby';
+      io.to(targetRoom).emit('message_deleted', { messageId, deletedBy: deleterName, roomId: targetRoom, isDirect: false });
     }
   });
 
