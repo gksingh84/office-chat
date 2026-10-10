@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -62,6 +64,39 @@ app.post('/api/verify-passkey', (req, res) => {
   return res.status(401).json({ success: false, message: 'Invalid secret passkey' });
 });
 
+// Permanent Username Registry File Persistence
+const REGISTRY_FILE = path.join(__dirname, 'registered_users.json');
+const registeredUsers = new Map(); // key -> { username, userTokens: [], pinHash, createdAt, lastLoginAt }
+
+function loadRegisteredUsers() {
+  try {
+    if (fs.existsSync(REGISTRY_FILE)) {
+      const raw = fs.readFileSync(REGISTRY_FILE, 'utf8');
+      const data = JSON.parse(raw);
+      for (const [k, v] of Object.entries(data)) {
+        registeredUsers.set(k.toLowerCase(), v);
+      }
+      console.log(`[+] Loaded ${registeredUsers.size} permanently registered usernames.`);
+    }
+  } catch (e) {
+    console.error('[-] Error loading registered_users.json:', e.message);
+  }
+}
+
+function saveRegisteredUsers() {
+  try {
+    const obj = {};
+    for (const [k, v] of registeredUsers.entries()) {
+      obj[k] = v;
+    }
+    fs.writeFileSync(REGISTRY_FILE, JSON.stringify(obj, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[-] Error saving registered_users.json:', e.message);
+  }
+}
+
+loadRegisteredUsers();
+
 // In-memory data store (NO database, strictly in RAM)
 const users = new Map();
 const rooms = new Map();
@@ -87,8 +122,8 @@ rooms.set('lobby', {
 io.on('connection', (socket) => {
   console.log(`[+] New socket connection: ${socket.id}`);
 
-  // 1. Authenticate with Master Passkey
-  socket.on('authenticate', ({ passkey, username, publicKey }, callback) => {
+  // 1. Authenticate with Master Passkey & Hybrid Username Ownership Verification
+  socket.on('authenticate', ({ passkey, username, userToken, userPin, publicKey }, callback) => {
     if (passkey !== APP_PASSKEY) {
       if (typeof callback === 'function') {
         callback({ success: false, error: 'Incorrect Passkey! Access Denied.' });
@@ -106,17 +141,70 @@ io.on('connection', (socket) => {
 
     const key = cleanUsername.toLowerCase();
 
-    // Enforce Unique Username across all active online users
+    // 1. Enforce Unique Active Username across all online users
     for (const [sId, u] of users.entries()) {
       if (sId !== socket.id && u && u.authenticated && u.username && u.username.trim().toLowerCase() === key) {
         if (typeof callback === 'function') {
           callback({ 
             success: false, 
-            error: `Username "${cleanUsername}" is already taken by an active online colleague. Please pick a different alias.` 
+            error: `Username "${cleanUsername}" is currently active on another device.` 
           });
         }
         return;
       }
+    }
+
+    // 2. Permanent Username Reservation & Verification
+    let reg = registeredUsers.get(key);
+
+    if (reg) {
+      // Username is already permanently registered! Verify ownership token or PIN
+      const isTokenValid = userToken && Array.isArray(reg.userTokens) && reg.userTokens.includes(userToken);
+      const incomingPinHash = userPin ? crypto.createHash('sha256').update(String(userPin).trim()).digest('hex') : null;
+      const isPinValid = reg.pinHash && incomingPinHash && (reg.pinHash === incomingPinHash);
+
+      if (!isTokenValid && !isPinValid) {
+        const needsPin = !!reg.pinHash;
+        if (typeof callback === 'function') {
+          callback({
+            success: false,
+            error: needsPin 
+              ? `Username "${cleanUsername}" is permanently reserved. Please enter your Personal PIN to log in from this new device.`
+              : `Username "${cleanUsername}" is permanently reserved by another user. Access Denied.`,
+            requiresPin: needsPin,
+            isReserved: true
+          });
+        }
+        return;
+      }
+
+      // If logging in via valid PIN from a new device, link new userToken
+      if (userToken && Array.isArray(reg.userTokens) && !reg.userTokens.includes(userToken)) {
+        reg.userTokens.push(userToken);
+      }
+      // If setting/updating PIN for first time on existing registered user
+      if (userPin && !reg.pinHash) {
+        reg.pinHash = crypto.createHash('sha256').update(String(userPin).trim()).digest('hex');
+      }
+
+      reg.lastLoginAt = new Date().toISOString();
+      registeredUsers.set(key, reg);
+      saveRegisteredUsers();
+    } else {
+      // First time registration! Permanently claim this username for this user/device
+      const initialToken = userToken || ('dev_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10));
+      const pinHash = userPin ? crypto.createHash('sha256').update(String(userPin).trim()).digest('hex') : null;
+
+      reg = {
+        username: cleanUsername,
+        userTokens: [initialToken],
+        pinHash: pinHash,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString()
+      };
+
+      registeredUsers.set(key, reg);
+      saveRegisteredUsers();
     }
 
     let session = userSessions.get(key);

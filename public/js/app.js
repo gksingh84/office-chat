@@ -73,6 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const authForm = document.getElementById('auth-form');
   const passkeyInput = document.getElementById('passkey-input');
   const usernameInput = document.getElementById('username-input');
+  const userPinInput = document.getElementById('user-pin-input');
   const authError = document.getElementById('auth-error');
   const errorText = document.getElementById('error-text');
   const togglePassBtn = document.getElementById('toggle-pass-btn');
@@ -218,16 +219,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  function getUserDeviceToken(username) {
+    const key = 'office_device_token_' + (username || 'anon').trim().toLowerCase();
+    let token = localStorage.getItem(key);
+    if (!token) {
+      token = 'dev_token_' + Date.now() + '_' + Math.random().toString(36).substring(2, 12);
+      localStorage.setItem(key, token);
+    }
+    return token;
+  }
+
   // 1. AUTHENTICATION & SESSION PERSISTENCE (PERSISTS ON REFRESH)
   authForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const passkey = passkeyInput.value.trim();
     const username = usernameInput.value.trim();
+    const userPin = userPinInput ? userPinInput.value.trim() : '';
 
     if (!passkey || !username) return;
 
     authError.classList.add('hidden');
-    initSocketConnection(passkey, username);
+    initSocketConnection(passkey, username, userPin);
   });
 
   // Check for active saved session on Page Refresh or Reopen
@@ -244,13 +256,15 @@ document.addEventListener('DOMContentLoaded', () => {
   if (savedSessionData && savedSessionData.passkey && savedSessionData.username) {
     passkeyInput.value = savedSessionData.passkey;
     usernameInput.value = savedSessionData.username;
-    initSocketConnection(savedSessionData.passkey, savedSessionData.username);
+    if (savedSessionData.userPin && userPinInput) userPinInput.value = savedSessionData.userPin;
+    initSocketConnection(savedSessionData.passkey, savedSessionData.username, savedSessionData.userPin || '');
   }
 
-  async function initSocketConnection(passkey, username) {
+  async function initSocketConnection(passkey, username, userPin = '') {
     if (socket) socket.disconnect();
 
     const pubKeyJWK = await E2EE.initIdentityKeyPair(username);
+    const userToken = getUserDeviceToken(username);
 
     socket = io({
       reconnectionAttempts: 5,
@@ -258,7 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('connect', () => {
-      socket.emit('authenticate', { passkey, username, publicKey: pubKeyJWK }, (res) => {
+      socket.emit('authenticate', { passkey, username, userToken, userPin, publicKey: pubKeyJWK }, (res) => {
         if (res.success) {
           currentUser = { id: res.user.id, username: res.user.username, passkey };
           
@@ -273,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const sessionPayload = JSON.stringify({
             passkey,
             username,
+            userPin,
             roomId: targetRoom,
             roomPasskey: targetPasskey
           });
@@ -293,6 +308,10 @@ document.addEventListener('DOMContentLoaded', () => {
           localStorage.removeItem(SESSION_STORAGE_KEY);
           sessionStorage.removeItem(SESSION_STORAGE_KEY);
           showAuthError(res.error || 'Authentication Failed');
+          if (res.requiresPin && userPinInput) {
+            userPinInput.focus();
+            userPinInput.style.borderColor = 'var(--danger)';
+          }
           socket.disconnect();
         }
       });
