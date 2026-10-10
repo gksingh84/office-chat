@@ -524,6 +524,22 @@ document.addEventListener('DOMContentLoaded', () => {
       if (activeTarget.type === 'room' && activeTarget.id === roomId) {
         chatMessages.innerHTML = '';
         appendSystemNotice(`Room History Burned by ${burnedBy}`);
+        playPopSound();
+      }
+    });
+
+    socket.on('dm_burned', ({ peerName, burnedBy }) => {
+      if (!peerName) return;
+      const key = peerName.toLowerCase();
+
+      dmStore.set(key, []);
+      saveDMStore();
+      ChatDB.clearTargetMessages(key);
+
+      if (activeTarget.type === 'user' && activeTarget.name.toLowerCase() === key) {
+        chatMessages.innerHTML = '';
+        appendSystemNotice(`Direct Chat History Burned by ${burnedBy}`);
+        playPopSound();
       }
     });
 
@@ -1158,17 +1174,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // 7. BURN CHAT & EXPLICIT LOGOUT HANDLER
   btnBurnChat.addEventListener('click', () => {
     if (activeTarget.type === 'room') {
-      if (confirm('Burn all messages in this room for everyone?')) {
+      if (confirm(`Burn all messages in "${activeTarget.name}" for everyone?`)) {
         socket.emit('burn_room');
-        ChatDB.clearTargetMessages(activeTarget.id);
       }
-    } else {
-      chatMessages.innerHTML = '';
-      if (activeTarget.type === 'user') {
-        const key = activeTarget.name.toLowerCase();
-        dmStore.set(key, []);
-        saveDMStore();
-        ChatDB.clearTargetMessages(key);
+    } else if (activeTarget.type === 'user') {
+      if (confirm(`Burn all direct messages with @${activeTarget.name} for both of you?`)) {
+        socket.emit('burn_dm', { recipientId: activeTarget.name });
       }
     }
   });

@@ -467,6 +467,30 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('room_burned', { roomId, burnedBy: user.username });
   });
 
+  // 9. Burn Direct Message / Wipe 1-on-1 DM Chat History for both participants
+  socket.on('burn_dm', ({ recipientId }) => {
+    if (!isAuthenticated()) return;
+    const user = users.get(socket.id);
+    if (!user || !recipientId) return;
+
+    const targetKey = String(recipientId).trim().toLowerCase();
+
+    let recipientSocketId = null;
+    let recipientUsername = recipientId;
+    for (const [sId, u] of users.entries()) {
+      if (sId === recipientId || (u.username && u.username.trim().toLowerCase() === targetKey)) {
+        recipientSocketId = sId;
+        recipientUsername = u.username;
+        break;
+      }
+    }
+
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('dm_burned', { peerName: user.username, burnedBy: user.username });
+    }
+    socket.emit('dm_burned', { peerName: recipientUsername, burnedBy: user.username });
+  });
+
   // 7. Explicit Logout (Fired when user clicks Logout button)
   socket.on('explicit_logout', () => {
     const user = users.get(socket.id);
