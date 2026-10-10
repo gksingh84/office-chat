@@ -147,7 +147,7 @@ io.on('connection', (socket) => {
         if (typeof callback === 'function') {
           callback({ 
             success: false, 
-            error: `Username "${cleanUsername}" is currently active on another device.` 
+            error: `Username "${cleanUsername}" has already been taken. Choose another unique username.` 
           });
         }
         return;
@@ -169,8 +169,8 @@ io.on('connection', (socket) => {
           callback({
             success: false,
             error: needsPin 
-              ? `Username "${cleanUsername}" is permanently reserved. Please enter your Personal PIN to log in from this new device.`
-              : `Username "${cleanUsername}" is permanently reserved by another user. Access Denied.`,
+              ? `Username "${cleanUsername}" has already been taken. Enter your Personal PIN if this is your reserved alias on a new device.`
+              : `Username "${cleanUsername}" has already been taken. Choose another unique username.`,
             requiresPin: needsPin,
             isReserved: true
           });
