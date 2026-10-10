@@ -421,7 +421,6 @@ document.addEventListener('DOMContentLoaded', () => {
       ChatDB.deleteMessage(messageId);
 
       const msgGroup = chatMessages.querySelector(`[data-id="${messageId}"]`);
-      const msgGroup = chatMessages.querySelector(`[data-id="${messageId}"]`);
       
       const isMyDeletion = currentUser.username && deletedBy && 
                            deletedBy.toLowerCase() === currentUser.username.toLowerCase();
