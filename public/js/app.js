@@ -230,19 +230,21 @@ document.addEventListener('DOMContentLoaded', () => {
     initSocketConnection(passkey, username);
   });
 
-  // Check for active tab session on Page Refresh
-  const savedSession = sessionStorage.getItem(SESSION_STORAGE_KEY);
-  if (savedSession) {
+  // Check for active saved session on Page Refresh or Reopen
+  const getSavedSessionData = () => {
     try {
-      const parsed = JSON.parse(savedSession);
-      if (parsed.passkey && parsed.username) {
-        passkeyInput.value = parsed.passkey;
-        usernameInput.value = parsed.username;
-        initSocketConnection(parsed.passkey, parsed.username);
-      }
+      const saved = localStorage.getItem(SESSION_STORAGE_KEY) || sessionStorage.getItem(SESSION_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
     } catch (e) {
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      return null;
     }
+  };
+
+  const savedSessionData = getSavedSessionData();
+  if (savedSessionData && savedSessionData.passkey && savedSessionData.username) {
+    passkeyInput.value = savedSessionData.passkey;
+    usernameInput.value = savedSessionData.username;
+    initSocketConnection(savedSessionData.passkey, savedSessionData.username);
   }
 
   async function initSocketConnection(passkey, username) {
@@ -260,23 +262,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (res.success) {
           currentUser = { id: res.user.id, username: res.user.username, passkey };
           
-          const saved = sessionStorage.getItem(SESSION_STORAGE_KEY);
+          const saved = getSavedSessionData();
           let targetRoom = 'lobby';
           let targetPasskey = '';
           if (saved) {
-            try {
-              const p = JSON.parse(saved);
-              if (p.roomId) targetRoom = p.roomId;
-              if (p.roomPasskey) targetPasskey = p.roomPasskey;
-            } catch(e) {}
+            if (saved.roomId) targetRoom = saved.roomId;
+            if (saved.roomPasskey) targetPasskey = saved.roomPasskey;
           }
 
-          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+          const sessionPayload = JSON.stringify({
             passkey,
             username,
             roomId: targetRoom,
             roomPasskey: targetPasskey
-          }));
+          });
+
+          localStorage.setItem(SESSION_STORAGE_KEY, sessionPayload);
+          sessionStorage.setItem(SESSION_STORAGE_KEY, sessionPayload);
 
           displayUserName.textContent = currentUser.username;
           currentUserAvatar.textContent = currentUser.username.charAt(0).toUpperCase();
@@ -288,6 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
           renderRoomsList();
           joinRoom(targetRoom, targetPasskey);
         } else {
+          localStorage.removeItem(SESSION_STORAGE_KEY);
           sessionStorage.removeItem(SESSION_STORAGE_KEY);
           showAuthError(res.error || 'Authentication Failed');
           socket.disconnect();
@@ -322,13 +325,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         (currentUser.username && msg.senderName.toLowerCase() === currentUser.username.toLowerCase());
         const peerName = isMyMsg ? msg.recipientName : msg.senderName;
         if (peerName) {
+          let peerPubKey = null;
           const peerUser = onlineUsers.find(u => u.username && u.username.toLowerCase() === peerName.toLowerCase());
           if (peerUser && peerUser.publicKey) {
-            key = await E2EE.getDMKey(peerName, peerUser.publicKey);
+            peerPubKey = peerUser.publicKey;
+          } else {
+            peerPubKey = await ChatDB.getPeerPublicKey(peerName);
+          }
+
+          if (peerPubKey) {
+            key = await E2EE.getDMKey(peerName, peerPubKey);
           }
         }
       } else {
-        const roomId = activeTarget.type === 'room' ? activeTarget.id : (socket.currentRoomId || 'lobby');
+        const roomId = msg.targetKey || (activeTarget.type === 'room' ? activeTarget.id : (socket.currentRoomId || 'lobby'));
         key = await E2EE.getRoomKey(roomId, currentRoomPasskey, currentUser.passkey || 'passkey4321');
       }
 
@@ -355,6 +365,13 @@ document.addEventListener('DOMContentLoaded', () => {
       onlineUsers = users.filter(u => u && u.username && u.username.trim().toLowerCase() !== (currentUser.username || '').trim().toLowerCase());
       onlineCount.textContent = onlineUsers.length;
       renderUsersList();
+
+      // Cache colleagues' ECDH Public Keys in IndexedDB for offline DM decryption
+      onlineUsers.forEach(u => {
+        if (u.username && u.publicKey) {
+          ChatDB.savePeerPublicKey(u.username, u.publicKey);
+        }
+      });
     });
 
     socket.on('room_created', (rooms) => {
@@ -1161,6 +1178,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (confirm('Are you sure you want to log out?')) {
         if (socket) socket.emit('explicit_logout');
         document.documentElement.classList.remove('has-saved-session');
+        localStorage.removeItem(SESSION_STORAGE_KEY);
         sessionStorage.removeItem(SESSION_STORAGE_KEY);
         sessionStorage.removeItem(DM_STORAGE_KEY);
         dmStore.clear();

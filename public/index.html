@@ -17,10 +17,10 @@
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="css/style.css">
   
-  <!-- Inline Session Check (Prevents Login Modal Flash on Refresh) -->
+  <!-- Inline Session Check (Prevents Login Modal Flash on Refresh/Reopen) -->
   <script>
     try {
-      if (sessionStorage.getItem('office_chatbox_session')) {
+      if (localStorage.getItem('office_chatbox_session') || sessionStorage.getItem('office_chatbox_session')) {
         document.documentElement.classList.add('has-saved-session');
       }
     } catch (e) {}

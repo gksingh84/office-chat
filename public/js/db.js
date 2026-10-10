@@ -32,6 +32,11 @@ const ChatDB = (() => {
         if (!db.objectStoreNames.contains('userKeys')) {
           db.createObjectStore('userKeys', { keyPath: 'username' });
         }
+
+        // 3. Peer Public Keys Store (Colleagues' ECDH Public Keys for offline DM decryption)
+        if (!db.objectStoreNames.contains('peerPublicKeys')) {
+          db.createObjectStore('peerPublicKeys', { keyPath: 'username' });
+        }
       };
 
       request.onsuccess = (e) => resolve(e.target.result);
@@ -164,6 +169,32 @@ const ChatDB = (() => {
     }
   }
 
+  // Save persistent peer public key
+  async function savePeerPublicKey(username, publicKeyJWK) {
+    if (!username || !publicKeyJWK) return;
+    try {
+      const db = await initDB();
+      const tx = db.transaction('peerPublicKeys', 'readwrite');
+      tx.objectStore('peerPublicKeys').put({ username: String(username).toLowerCase(), publicKeyJWK });
+    } catch (e) {}
+  }
+
+  // Get persistent peer public key
+  async function getPeerPublicKey(username) {
+    if (!username) return null;
+    try {
+      const db = await initDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction('peerPublicKeys', 'readonly');
+        const req = tx.objectStore('peerPublicKeys').get(String(username).toLowerCase());
+        req.onsuccess = () => resolve(req.result ? req.result.publicKeyJWK : null);
+        req.onerror = () => resolve(null);
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
   return {
     saveMessage,
     saveMessagesBatch,
@@ -172,6 +203,8 @@ const ChatDB = (() => {
     clearTargetMessages,
     clearAllHistory,
     saveUserKeys,
-    getUserKeys
+    getUserKeys,
+    savePeerPublicKey,
+    getPeerPublicKey
   };
 })();
